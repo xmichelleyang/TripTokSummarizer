@@ -1,0 +1,26 @@
+# --- TripCollector generated output ---
+trips/
+*.mp3
+*.mp4
+*.m4a
+*.wav
+*.webm
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

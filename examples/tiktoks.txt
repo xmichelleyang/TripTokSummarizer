@@ -1,0 +1,7 @@
+# Example input: one TikTok URL per line.
+# Lines starting with '#' and blank lines are ignored.
+# Replace these with real TikTok video URLs for a country's collection.
+
+# https://www.tiktok.com/@someuser/video/7300000000000000001
+# https://www.tiktok.com/@someuser/video/7300000000000000002
+# https://www.tiktok.com/@someuser/video/7300000000000000003

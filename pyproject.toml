@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tripcollector"
+version = "0.1.0"
+description = "Turn TikTok travel collections into organized, per-country trip notes."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "yt-dlp>=2024.1.0",
+]
+
+[project.optional-dependencies]
+faster = ["faster-whisper>=1.0.0"]
+whisper = ["openai-whisper>=20231117"]
+openai = ["openai>=1.0.0"]
+
+[project.scripts]
+tripcollector = "tripcollector.cli:main"
+
+[tool.setuptools]
+packages = ["tripcollector"]
