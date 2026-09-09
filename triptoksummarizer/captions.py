@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 
-from tripcollector.downloader import (
+from triptoksummarizer.downloader import (
     IMPERSONATE_ARGS,
     DownloadError,
     VideoItem,
@@ -22,7 +22,7 @@ from tripcollector.downloader import (
     probe_metadata,
     write_item_metadata,
 )
-from tripcollector.utils import ensure_dir, log, slugify
+from triptoksummarizer.utils import ensure_dir, log, slugify
 
 
 def choose_sub_lang(meta: dict, preferred: Optional[str]) -> Optional[str]:

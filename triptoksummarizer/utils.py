@@ -6,7 +6,7 @@ import logging
 import re
 from pathlib import Path
 
-log = logging.getLogger("tripcollector")
+log = logging.getLogger("triptoksummarizer")
 
 
 def setup_logging(verbose: bool = False) -> None:

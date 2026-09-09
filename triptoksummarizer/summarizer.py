@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from tripcollector.utils import log
+from triptoksummarizer.utils import log
 
 # ---------------------------------------------------------------------------
 # Public entry point

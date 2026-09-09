@@ -8,13 +8,14 @@ by first expanding them into their member videos.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from tripcollector.utils import ensure_dir, log, slugify
+from triptoksummarizer.utils import ensure_dir, log, slugify
 
 # TikTok now blocks plain HTTP clients; yt-dlp must impersonate a real browser
 # (requires the optional ``curl_cffi`` dependency).
@@ -91,6 +92,21 @@ def _looks_like_collection(url: str) -> bool:
     return "/collection/" in url
 
 
+_VIDEO_ID_RE = re.compile(r"/(?:video|photo)/(\d+)")
+
+
+def extract_video_id(url: str) -> Optional[str]:
+    """Parse the TikTok video/photo ID straight from a URL, without any network.
+
+    TikTok video URLs look like ``.../@user/video/7681920804111616782`` (and photo
+    posts ``.../photo/<id>``); the numeric ID equals yt-dlp's metadata ``id`` and the
+    per-video folder name. Short links (e.g. ``vm.tiktok.com/xxxx``) carry no ID and
+    return ``None`` so callers can fall back to a metadata probe.
+    """
+    m = _VIDEO_ID_RE.search(url)
+    return m.group(1) if m else None
+
+
 def gather_urls(
     urls: Optional[List[str]] = None,
     input_file: Optional[Path] = None,
@@ -160,6 +176,35 @@ def write_item_metadata(item_dir: Path, meta: dict, url: str) -> dict:
         encoding="utf-8",
     )
     return fields
+
+
+def load_item_from_disk(item_dir: Path) -> Optional[VideoItem]:
+    """Rebuild a :class:`VideoItem` from an already-written ``metadata.json``.
+
+    Used to short-circuit videos that were fully processed on a previous run, so a
+    re-run needs no network probe. Returns ``None`` if the metadata is missing or
+    unreadable, letting the caller fall back to the normal download/probe path.
+    """
+    meta_path = item_dir / "metadata.json"
+    if not meta_path.exists():
+        return None
+    try:
+        fields = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    audio_path = item_dir / "audio.mp3"
+    video_path = item_dir / "video.mp4"
+    return VideoItem(
+        id=str(fields.get("id") or item_dir.name),
+        url=fields.get("url", ""),
+        title=fields.get("title") or str(fields.get("id") or item_dir.name),
+        uploader=fields.get("uploader", ""),
+        description=fields.get("description", ""),
+        dir=item_dir,
+        audio_path=audio_path if audio_path.exists() else None,
+        video_path=video_path if video_path.exists() else None,
+    )
 
 
 def download_one(

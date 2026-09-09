@@ -1,4 +1,4 @@
-"""Configuration for a TripCollector run."""
+"""Configuration for a TripTokSummarizer run."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class Settings:
     # Summarization (OpenAI, optional).
     openai_model: str = field(
         default_factory=lambda: os.environ.get(
-            "TRIPCOLLECTOR_OPENAI_MODEL", "gpt-4o-mini"
+            "TRIPTOKSUMMARIZER_OPENAI_MODEL", "gpt-4o-mini"
         )
     )
 

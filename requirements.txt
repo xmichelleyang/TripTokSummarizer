@@ -1,14 +1,19 @@
-# Runtime dependencies for TripCollector.
-# yt-dlp is required for downloading; ffmpeg must be installed separately.
+# Runtime dependencies for TripTokSummarizer.
+# yt-dlp fetches caption tracks (and, optionally, audio).
 yt-dlp>=2024.1.0
 
-# --- Transcription (install at least one) ---
-# Recommended local backend:
-faster-whisper>=1.0.0
-# Alternative local backend (pure PyTorch):
-# openai-whisper>=20231117
+# TikTok blocks plain HTTP clients, so yt-dlp must impersonate a real browser
+# (`--impersonate chrome`). curl_cffi provides that and is required for the
+# default captions source as well as the audio source.
+curl_cffi>=0.5.10
 
 # --- Summarization (optional, best quality) ---
 # Enables the OpenAI backend for both transcription (whisper-1) and summaries.
 # Requires the OPENAI_API_KEY environment variable.
 openai>=1.0.0
+
+# NOTE: The default `--source captions` needs no Whisper backend or ffmpeg.
+# The optional `--source audio` path (download audio + local Whisper) is not
+# installed by default. To use it, install ffmpeg plus one backend, e.g.:
+#   pip install "triptoksummarizer[faster]"  # faster-whisper (recommended)
+#   pip install openai-whisper              # pure-PyTorch alternative

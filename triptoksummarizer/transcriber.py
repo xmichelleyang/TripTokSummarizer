@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from tripcollector.utils import log, write_text
+from triptoksummarizer.utils import log, write_text
 
 
 class TranscriptionError(RuntimeError):

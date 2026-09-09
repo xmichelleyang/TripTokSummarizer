@@ -1,29 +1,32 @@
-"""Command-line entry point for TripCollector."""
+"""Command-line entry point for TripTokSummarizer."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from tripcollector import __version__
-from tripcollector.captions import collect_captions
-from tripcollector.config import Settings
-from tripcollector.downloader import (
+from triptoksummarizer import __version__
+from triptoksummarizer.captions import collect_captions
+from triptoksummarizer.config import Settings
+from triptoksummarizer.downloader import (
     DownloadError,
     VideoItem,
     download_one,
+    extract_video_id,
     gather_urls,
+    load_item_from_disk,
 )
-from tripcollector.summarizer import summarize
-from tripcollector.transcriber import TranscriptionError, transcribe
-from tripcollector.utils import ensure_dir, log, setup_logging, write_text
+from triptoksummarizer.summarizer import summarize
+from triptoksummarizer.transcriber import TranscriptionError, transcribe
+from triptoksummarizer.utils import ensure_dir, log, setup_logging, write_text
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="tripcollector",
+        prog="triptoksummarizer",
         description="Turn TikTok travel collections into per-country trip notes.",
     )
     p.add_argument("--country", required=True, help="Country folder to write into.")
@@ -53,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--keep-video", action="store_true", help="Keep the downloaded video file.")
     p.add_argument("--no-summary-index", action="store_true", help="Do not write the aggregate country summary.")
     p.add_argument("-v", "--verbose", action="store_true", help="More logging.")
-    p.add_argument("--version", action="version", version=f"tripcollector {__version__}")
+    p.add_argument("--version", action="version", version=f"triptoksummarizer {__version__}")
     return p
 
 
@@ -76,13 +79,66 @@ def settings_from_args(argv: Optional[List[str]] = None) -> Settings:
     )
 
 
-def process_video(url: str, s: Settings) -> Optional[VideoItem]:
+@dataclass
+class ProcessResult:
+    """Outcome of processing a single URL, for the run's summary report."""
+
+    item: VideoItem
+    status: str  # "processed" | "skipped_complete"
+    transcript_empty: bool = False
+
+
+def is_item_complete(item_dir: Path) -> bool:
+    """A video is done when both its transcript and its summary exist on disk."""
+    return (item_dir / "transcript.txt").exists() and (item_dir / "summary.md").exists()
+
+
+def _transcript_is_empty(item_dir: Path) -> bool:
+    path = item_dir / "transcript.txt"
+    if not path.exists():
+        return True
+    return not path.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def _short_circuit_complete(url: str, s: Settings) -> Optional[ProcessResult]:
+    """Return a result for an already-finished video without any network call.
+
+    Uses the URL-derived video ID to find the existing folder; if it is complete
+    (transcript + summary present) and ``--force`` is off, the finished
+    :class:`VideoItem` is rebuilt from disk. Returns ``None`` when the video is new,
+    incomplete, or the URL carries no parseable ID (caller then does the real work).
+    """
+    if s.force:
+        return None
+    vid_id = extract_video_id(url)
+    if not vid_id:
+        return None
+    item_dir = s.country_dir / vid_id
+    if not is_item_complete(item_dir):
+        return None
+    item = load_item_from_disk(item_dir)
+    if item is None:
+        return None
+    empty = _transcript_is_empty(item_dir)
+    if empty:
+        log.info("Skipping complete (empty transcript): %s", vid_id)
+    else:
+        log.info("Skipping complete: %s", vid_id)
+    return ProcessResult(item=item, status="skipped_complete", transcript_empty=empty)
+
+
+def process_video(url: str, s: Settings) -> Optional[ProcessResult]:
     """Run transcript-collection -> summarize for a single URL.
 
-    The transcript comes either from the TikTok's own caption track
-    (``source == "captions"``, no media download) or from downloading audio and
-    running Whisper (``source == "audio"``).
+    Already-finished videos are short-circuited from disk (no network) so a re-run of
+    a grown collection only does real work for the new videos. Otherwise the transcript
+    comes either from the TikTok's own caption track (``source == "captions"``, no media
+    download) or from downloading audio and running Whisper (``source == "audio"``).
     """
+    cached = _short_circuit_complete(url, s)
+    if cached is not None:
+        return cached
+
     transcript = ""
     try:
         if s.source == "captions":
@@ -129,7 +185,11 @@ def process_video(url: str, s: Settings) -> Optional[VideoItem]:
         write_text(summary_path, summary + "\n")
         log.info("Wrote summary: %s", summary_path)
 
-    return item
+    return ProcessResult(
+        item=item,
+        status="processed",
+        transcript_empty=not (transcript or "").strip(),
+    )
 
 
 def write_country_index(items: List[VideoItem], s: Settings) -> Path:
@@ -138,7 +198,7 @@ def write_country_index(items: List[VideoItem], s: Settings) -> Path:
     parts: List[str] = [
         f"# Trip notes: {s.country}",
         "",
-        f"Auto-generated from {len(items)} TikTok(s) by TripCollector.",
+        f"Auto-generated from {len(items)} TikTok(s) by TripTokSummarizer.",
         "",
     ]
     for item in items:
@@ -176,18 +236,46 @@ def run(s: Settings) -> int:
         return 2
 
     log.info("Processing %d video(s).", len(urls))
-    items: List[VideoItem] = []
+    results: List[ProcessResult] = []
     for i, url in enumerate(urls, 1):
         log.info("[%d/%d] %s", i, len(urls), url)
-        item = process_video(url, s)
-        if item:
-            items.append(item)
+        result = process_video(url, s)
+        if result:
+            results.append(result)
 
+    items = [r.item for r in results]
     if s.write_index and items:
         write_country_index(items, s)
 
-    log.info("Done. %d/%d videos processed.", len(items), len(urls))
+    _report_run(results, attempted=len(urls))
     return 0 if items else 1
+
+
+def _report_run(results: List[ProcessResult], attempted: int) -> None:
+    """Log a final summary: how many videos were new vs. skipped, and why."""
+    processed = [r for r in results if r.status == "processed"]
+    skipped = [r for r in results if r.status == "skipped_complete"]
+    empties = [r for r in results if r.transcript_empty]
+
+    log.info(
+        "Done. %d/%d succeeded (%d newly processed, %d already complete, "
+        "%d failed).",
+        len(results),
+        attempted,
+        len(processed),
+        len(skipped),
+        attempted - len(results),
+    )
+
+    if empties:
+        log.warning(
+            "%d video(s) have an empty transcript and were NOT re-attempted. This "
+            "usually means the TikTok had no caption track (or speech-to-text "
+            "produced no text). Re-run with --force to try again:",
+            len(empties),
+        )
+        for r in empties:
+            log.warning("  - %s  (%s)", r.item.id, (r.item.title or "").strip()[:70])
 
 
 def main(argv: Optional[List[str]] = None) -> int:
